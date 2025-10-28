@@ -1,0 +1,104 @@
+const { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, Events } = require("discord.js");
+const express = require("express");
+const app = express();
+
+// tiny web server for Render
+app.get("/", (_, res) => res.send("Bot is online"));
+app.listen(3000, () => console.log("Web server running"));
+
+const client = new Client({
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+  partials: [Partials.Channel],
+});
+
+const TOKEN = process.env.TOKEN;
+
+client.once("ready", () => {
+  console.log(`✅ Logged in as ${client.user.tag}`);
+});
+
+client.on("messageCreate", async (msg) => {
+  if (!msg.content.startsWith("!panel") || msg.author.bot) return;
+
+  const embed = new EmbedBuilder()
+    .setTitle("Bot Control Panel")
+    .setDescription("🎟 Ticket System\n🧾 Interview Application System")
+    .setColor("Blue");
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("ticket_btn").setLabel("🎟 Create Ticket").setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId("interview_btn").setLabel("🧾 Apply Now").setStyle(ButtonStyle.Success)
+  );
+
+  await msg.channel.send({ embeds: [embed], components: [row] });
+});
+
+client.on(Events.InteractionCreate, async (interaction) => {
+  if (!interaction.isButton()) return;
+
+  if (interaction.customId === "ticket_btn") {
+    const channel = await interaction.guild.channels.create({
+      name: `ticket-${interaction.user.username}`,
+      type: 0,
+      permissionOverwrites: [
+        { id: interaction.guild.id, deny: ["ViewChannel"] },
+        { id: interaction.user.id, allow: ["ViewChannel", "SendMessages", "AttachFiles"] },
+      ],
+    });
+
+    await channel.send(`Hello ${interaction.user}, staff will help you soon. Type !close to close ticket.`);
+    await interaction.reply({ content: `✅ Ticket created: ${channel}`, ephemeral: true });
+  }
+
+  if (interaction.customId === "interview_btn") {
+    const modal = new ModalBuilder()
+      .setCustomId("interview_modal")
+      .setTitle("Interview Application");
+
+    const q1 = new TextInputBuilder()
+      .setCustomId("name")
+      .setLabel("What is your name?")
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true);
+
+    const q2 = new TextInputBuilder()
+      .setCustomId("reason")
+      .setLabel("Why do you want to join?")
+      .setStyle(TextInputStyle.Paragraph)
+      .setRequired(true);
+
+    modal.addComponents(new ActionRowBuilder().addComponents(q1), new ActionRowBuilder().addComponents(q2));
+    await interaction.showModal(modal);
+  }
+});
+
+client.on(Events.InteractionCreate, async (interaction) => {
+  if (!interaction.isModalSubmit()) return;
+  if (interaction.customId === "interview_modal") {
+    const name = interaction.fields.getTextInputValue("name");
+    const reason = interaction.fields.getTextInputValue("reason");
+
+    const logChannel = interaction.guild.channels.cache.find((c) => c.name === "applications");
+    if (logChannel) {
+      const embed = new EmbedBuilder()
+        .setTitle("New Interview Application")
+        .addFields(
+          { name: "User", value: `${interaction.user}` },
+          { name: "Name", value: name },
+          { name: "Reason", value: reason }
+        )
+        .setColor("Green");
+      await logChannel.send({ embeds: [embed] });
+    }
+
+    await interaction.reply({ content: "✅ Your application has been submitted!", ephemeral: true });
+  }
+});
+
+client.on("messageCreate", async (msg) => {
+  if (msg.content === "!close" && msg.channel.name.startsWith("ticket-")) {
+    await msg.channel.delete();
+  }
+});
+
+client.login(TOKEN);
